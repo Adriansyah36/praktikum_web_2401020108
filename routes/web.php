@@ -3,16 +3,12 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
-/*
-|--------------------------------------------------------------------------
-| Praktikum 2 - Latihan PHP
-|--------------------------------------------------------------------------
-*/
 
 Route::get('/latihan-php', function () {
     $nama = 'M.Adriansyah';
@@ -44,33 +40,11 @@ Route::get('/latihan-php', function () {
     ));
 });
 
-/*
-|--------------------------------------------------------------------------
-| Praktikum 3 - Form Mahasiswa
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
-| GET
-| Menampilkan form mahasiswa
-|--------------------------------------------------------------------------
-*/
-
 Route::get('/form-mahasiswa', function () {
     return view('form-mahasiswa');
 });
-
-/*
-|--------------------------------------------------------------------------
-| POST
-| Menerima, membersihkan, dan memvalidasi data form
-|--------------------------------------------------------------------------
-*/
-
 Route::post('/form-mahasiswa', function (Request $request) {
 
-    // Sanitasi data sebelum divalidasi
     $dataBersih = [
         'nama' => strip_tags(
             trim((string) $request->input('nama'))
@@ -99,19 +73,16 @@ Route::post('/form-mahasiswa', function (Request $request) {
                 'min:3',
                 'max:50'
             ],
-
             'email' => [
                 'required',
                 'email'
             ],
-
             'usia' => [
                 'required',
                 'integer',
                 'min:17',
                 'max:60'
             ],
-
             'nim' => [
                 'required',
                 'digits_between:8,12'
@@ -152,4 +123,36 @@ Route::post('/form-mahasiswa', function (Request $request) {
     return view('hasil-form', [
         'data' => $data
     ]);
+});
+
+Route::get('/mahasiswa/{nim?}', function (?string $nim = null) {
+    try {
+        $pdo = DB::connection()->getPdo();
+
+        $sql = 'SELECT m.nim, m.nama, m.email, m.usia,
+                       p.nama_prodi
+                FROM mahasiswa AS m
+                JOIN program_studi AS p
+                    ON p.id = m.program_studi_id';
+
+        if ($nim !== null) {
+            $sql .= ' WHERE m.nim = :nim';
+        }
+
+        $sql .= ' ORDER BY m.nim';
+
+        $statement = $pdo->prepare($sql);
+        $statement->execute($nim !== null ? ['nim' => $nim] : []);
+
+        $daftarMahasiswa = $statement->fetchAll(\PDO::FETCH_ASSOC);
+
+        return view('mahasiswa', compact('daftarMahasiswa', 'nim'));
+    } catch (\Throwable $error) {
+        report($error);
+
+        return response(
+            'Koneksi atau query basis data gagal. Periksa file .env dan layanan MySQL.',
+            500
+        );
+    }
 });
