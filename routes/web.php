@@ -125,34 +125,127 @@ Route::post('/form-mahasiswa', function (Request $request) {
     ]);
 });
 
-Route::get('/mahasiswa/{nim?}', function (?string $nim = null) {
+Route::get('/mahasiswa', function () {
     try {
         $pdo = DB::connection()->getPdo();
 
-        $sql = 'SELECT m.nim, m.nama, m.email, m.usia,
-                       p.nama_prodi
-                FROM mahasiswa AS m
-                JOIN program_studi AS p
-                    ON p.id = m.program_studi_id';
+        // Mengambil data mahasiswa beserta nama program studi
+        $sqlMahasiswa = '
+            SELECT
+                m.nim,
+                m.nama,
+                m.email,
+                m.usia,
+                p.nama_prodi
+            FROM mahasiswa AS m
+            INNER JOIN program_studi AS p
+                ON p.id = m.program_studi_id
+            ORDER BY m.nim
+        ';
 
-        if ($nim !== null) {
-            $sql .= ' WHERE m.nim = :nim';
-        }
+        $statementMahasiswa = $pdo->prepare($sqlMahasiswa);
+        $statementMahasiswa->execute();
 
-        $sql .= ' ORDER BY m.nim';
+        $daftarMahasiswa = $statementMahasiswa->fetchAll(
+            \PDO::FETCH_ASSOC
+        );
 
-        $statement = $pdo->prepare($sql);
-        $statement->execute($nim !== null ? ['nim' => $nim] : []);
+        // Mengambil daftar program studi
+        $sqlProgramStudi = '
+            SELECT id, nama_prodi
+            FROM program_studi
+            ORDER BY nama_prodi
+        ';
 
-        $daftarMahasiswa = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        $statementProgramStudi = $pdo->prepare($sqlProgramStudi);
+        $statementProgramStudi->execute();
 
-        return view('mahasiswa', compact('daftarMahasiswa', 'nim'));
+        $daftarProgramStudi = $statementProgramStudi->fetchAll(
+            \PDO::FETCH_ASSOC
+        );
+
+        return view('mahasiswa', compact(
+            'daftarMahasiswa',
+            'daftarProgramStudi'
+        ));
     } catch (\Throwable $error) {
         report($error);
 
         return response(
-            'Koneksi atau query basis data gagal. Periksa file .env dan layanan MySQL.',
+            'Koneksi atau query basis data gagal. Periksa konfigurasi database.',
             500
         );
     }
-});
+})->name('mahasiswa.index');
+Route::post('/mahasiswa', function (Request $request) {
+    $validated = $request->validate(
+        [
+            'nim' => 'required|string|max:20',
+            'nama' => 'required|string|max:100',
+            'email' => 'required|email|max:100',
+            'usia' => 'required|integer|min:15|max:100',
+            'program_studi_id' => 'required|integer',
+        ],
+        [
+            'nim.required' => 'NIM wajib diisi.',
+            'nama.required' => 'Nama wajib diisi.',
+            'email.required' => 'Email wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'usia.required' => 'Usia wajib diisi.',
+            'usia.integer' => 'Usia harus berupa angka bulat.',
+            'usia.min' => 'Usia minimal 15 tahun.',
+            'usia.max' => 'Usia maksimal 100 tahun.',
+            'program_studi_id.required' => 'Program studi wajib dipilih.',
+        ]
+    );
+
+    try {
+        $pdo = DB::connection()->getPdo();
+
+        $stmtCek = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM mahasiswa
+             WHERE nim = :nim OR email = :email'
+        );
+
+        $stmtCek->execute([
+            'nim' => $validated['nim'],
+            'email' => $validated['email'],
+        ]);
+
+        $jumlahDuplikat = (int) $stmtCek->fetchColumn();
+
+        if ($jumlahDuplikat > 0) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('gagal', 'NIM atau email sudah digunakan.');
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO mahasiswa
+                (nim, nama, email, usia, program_studi_id)
+             VALUES
+                (:nim, :nama, :email, :usia, :program_studi_id)'
+        );
+
+        $stmt->execute([
+            'nim' => $validated['nim'],
+            'nama' => $validated['nama'],
+            'email' => $validated['email'],
+            'usia' => $validated['usia'],
+            'program_studi_id' => $validated['program_studi_id'],
+        ]);
+
+        return redirect()
+            ->route('mahasiswa.index')
+            ->with('berhasil', 'Data mahasiswa berhasil ditambahkan.');
+    } catch (\Throwable $e) {
+        report($e);
+
+        return redirect()
+            ->back()
+            ->withInput()
+            ->with('gagal', 'Data mahasiswa gagal ditambahkan. Periksa kembali data dan koneksi database.');
+    }
+})->name('mahasiswa.store');
