@@ -125,32 +125,60 @@ Route::post('/form-mahasiswa', function (Request $request) {
     ]);
 });
 
-Route::get('/mahasiswa', function () {
+
+Route::get('/mahasiswa', function (Request $request) {
     try {
         $pdo = DB::connection()->getPdo();
 
-        // Mengambil data mahasiswa beserta nama program studi
+        // Mengambil kata kunci pencarian dan filter program studi
+        $kataKunci = trim($request->query('cari', ''));
+        $programStudiId = $request->query('program_studi_id', '');
+
+        // Query dasar untuk mengambil data mahasiswa
         $sqlMahasiswa = '
             SELECT
+                m.id,
                 m.nim,
                 m.nama,
                 m.email,
                 m.usia,
+                m.program_studi_id,
                 p.nama_prodi
             FROM mahasiswa AS m
             INNER JOIN program_studi AS p
                 ON p.id = m.program_studi_id
-            ORDER BY m.nim
+            WHERE (
+                       m.nim LIKE :nim
+                      OR m.nama LIKE :nama
+                      OR m.email LIKE :email
+)
         ';
 
+        $parameter = [
+            'nim' => '%' . $kataKunci . '%',
+            'nama' => '%' . $kataKunci . '%',
+            'email' => '%' . $kataKunci . '%',
+        ];
+
+        // Filter berdasarkan program studi jika dipilih
+        if ($programStudiId !== '') {
+            $sqlMahasiswa .= '
+                AND m.program_studi_id = :program_studi_id
+            ';
+
+            $parameter['program_studi_id'] = $programStudiId;
+        }
+
+        $sqlMahasiswa .= ' ORDER BY m.nim';
+
         $statementMahasiswa = $pdo->prepare($sqlMahasiswa);
-        $statementMahasiswa->execute();
+        $statementMahasiswa->execute($parameter);
 
         $daftarMahasiswa = $statementMahasiswa->fetchAll(
             \PDO::FETCH_ASSOC
         );
 
-        // Mengambil daftar program studi
+        // Mengambil daftar program studi untuk pilihan filter
         $sqlProgramStudi = '
             SELECT id, nama_prodi
             FROM program_studi
@@ -166,7 +194,9 @@ Route::get('/mahasiswa', function () {
 
         return view('mahasiswa', compact(
             'daftarMahasiswa',
-            'daftarProgramStudi'
+            'daftarProgramStudi',
+            'kataKunci',
+            'programStudiId'
         ));
     } catch (\Throwable $error) {
         report($error);
@@ -177,6 +207,7 @@ Route::get('/mahasiswa', function () {
         );
     }
 })->name('mahasiswa.index');
+
 Route::post('/mahasiswa', function (Request $request) {
     $validated = $request->validate(
         [
@@ -249,3 +280,71 @@ Route::post('/mahasiswa', function (Request $request) {
             ->with('gagal', 'Data mahasiswa gagal ditambahkan. Periksa kembali data dan koneksi database.');
     }
 })->name('mahasiswa.store');
+
+/*
+|--------------------------------------------------------------------------
+| Update dan Delete Mahasiswa
+|--------------------------------------------------------------------------
+*/
+
+// Menampilkan formulir edit mahasiswa
+Route::get('/mahasiswa/{id}/edit', function ($id) {
+    $mahasiswa = DB::table('mahasiswa')
+        ->where('id', $id)
+        ->first();
+
+    if (!$mahasiswa) {
+        abort(404);
+    }
+
+    $daftarProgramStudi = DB::table('program_studi')
+        ->orderBy('nama_prodi')
+        ->get();
+
+    return view('mahasiswa-edit', compact(
+        'mahasiswa',
+        'daftarProgramStudi'
+    ));
+})->name('mahasiswa.edit');
+
+
+// Menyimpan perubahan data mahasiswa
+Route::put('/mahasiswa/{id}', function (Request $request, $id) {
+    if (!DB::table('mahasiswa')->where('id', $id)->exists()) {
+        abort(404);
+    }
+
+    $data = $request->validate([
+        'nim' => 'required|string|max:10|unique:mahasiswa,nim,' . $id . ',id',
+        'nama' => 'required|string|max:100',
+        'email' => 'required|email|max:100|unique:mahasiswa,email,' . $id . ',id',
+        'usia' => 'required|integer|min:15|max:100',
+        'program_studi_id' => 'required|integer|exists:program_studi,id',
+    ]);
+
+    DB::table('mahasiswa')
+        ->where('id', $id)
+        ->update($data);
+
+    return redirect()
+        ->route('mahasiswa.index')
+        ->with('berhasil', 'Data mahasiswa berhasil diperbarui.');
+})->name('mahasiswa.update');
+
+
+// Menghapus data mahasiswa
+Route::delete('/mahasiswa/{id}', function ($id) {
+    $jumlahDihapus = DB::table('mahasiswa')
+        ->where('id', $id)
+        ->delete();
+
+    if ($jumlahDihapus > 0) {
+        return redirect()
+            ->route('mahasiswa.index')
+            ->with('berhasil', 'Data mahasiswa berhasil dihapus.');
+    }
+
+    return redirect()
+        ->route('mahasiswa.index')
+        ->with('gagal', 'Data mahasiswa tidak ditemukan.');
+})->name('mahasiswa.destroy');
