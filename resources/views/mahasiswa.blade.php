@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -22,7 +23,7 @@
     @endif
 
     @if ($errors->any())
-        <div>
+        <div style="color: red;">
             <p>Terjadi kesalahan pada input:</p>
             <ul>
                 @foreach ($errors->all() as $error)
@@ -31,6 +32,8 @@
             </ul>
         </div>
     @endif
+
+    <hr>
 
     <h2>Tambah Mahasiswa</h2>
 
@@ -112,7 +115,49 @@
 
     <hr>
 
+    <h2>Pencarian dan Filter Mahasiswa</h2>
+
+    <form action="{{ route('mahasiswa.index') }}" method="GET">
+        <p>
+            <label for="cari">Cari NIM, Nama, atau Email:</label><br>
+            <input
+                type="text"
+                id="cari"
+                name="cari"
+                value="{{ $kataKunci }}"
+                placeholder="Masukkan kata kunci"
+            >
+        </p>
+
+        <p>
+            <label for="filter_program_studi">Filter Program Studi:</label><br>
+
+            <select
+                id="filter_program_studi"
+                name="program_studi_id"
+            >
+                <option value="">-- Semua Program Studi --</option>
+
+                @foreach ($daftarProgramStudi as $program)
+                    <option
+                        value="{{ $program['id'] }}"
+                        {{ (string) $programStudiId === (string) $program['id'] ? 'selected' : '' }}
+                    >
+                        {{ $program['nama_prodi'] }}
+                    </option>
+                @endforeach
+            </select>
+        </p>
+
+        <button type="submit">Cari / Filter</button>
+        <a href="{{ route('mahasiswa.index') }}">Reset</a>
+    </form>
+
+    <hr>
+
     <h2>Daftar Mahasiswa</h2>
+
+    <p>Jumlah data ditemukan: {{ count($daftarMahasiswa) }}</p>
 
     <table border="1" cellpadding="6" cellspacing="0">
         <thead>
@@ -122,6 +167,7 @@
                 <th>Email</th>
                 <th>Usia</th>
                 <th>Program Studi</th>
+                <th>Aksi</th>
             </tr>
         </thead>
 
@@ -133,10 +179,31 @@
                     <td>{{ $mahasiswa['email'] }}</td>
                     <td>{{ $mahasiswa['usia'] }}</td>
                     <td>{{ $mahasiswa['nama_prodi'] }}</td>
+                    <td>
+    <a href="{{ route('mahasiswa.edit', $mahasiswa['id']) }}">
+        Edit
+    </a>
+
+    |
+
+    <form
+        action="{{ route('mahasiswa.destroy', $mahasiswa['id']) }}"
+        method="POST"
+        style="display: inline;"
+        onsubmit="return confirm('Yakin ingin menghapus data mahasiswa ini?')"
+    >
+        @csrf
+        @method('DELETE')
+
+        <button type="submit">Hapus</button>
+    </form>
+</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="5">Belum ada data mahasiswa.</td>
+                    <td colspan="6">
+                        Tidak ada data mahasiswa yang sesuai dengan pencarian atau filter.
+                    </td>
                 </tr>
             @endforelse
         </tbody>
